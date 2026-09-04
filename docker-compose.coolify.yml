@@ -1,0 +1,138 @@
+# Cal.diy deployment for Coolify (https://coolify.io)
+#
+# Usage:
+#   1. Create a new "Docker Compose" resource in Coolify pointing at this repository
+#      and set the compose file to `docker-compose.coolify.yml`.
+#   2. Set the domain of the `calcom` service in Coolify (Service -> Domains).
+#      The domain is injected into the containers through the magic variables below.
+#
+# Magic variables used here (https://next.coolify.io/docs/services/configuration/docker-compose):
+#   SERVICE_FQDN_<NAME>_<PORT>  -> registers the domain in the proxy and points it to <PORT>
+#   SERVICE_URL_<NAME>_<PORT>   -> the full URL (scheme + domain) of that FQDN
+#   SERVICE_PASSWORD_<NAME>     -> generated password, persisted across deployments
+#   SERVICE_BASE64_<LEN>_<NAME> -> generated base64 secret of <LEN> characters
+#
+# No `ports:` are published: Coolify's proxy (Traefik/Caddy) routes the domain to the
+# containers over the internal network, so host ports are not needed.
+
+volumes:
+  database-data:
+  redis-data:
+
+services:
+  database:
+    image: postgres:16-alpine
+    restart: always
+    volumes:
+      - database-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-unicorn_user}
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=${POSTGRES_DB:-calendso}
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unicorn_user} -d ${POSTGRES_DB:-calendso}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  calcom:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WEBAPP_URL: ${SERVICE_URL_CALCOM_3000}
+        NEXT_PUBLIC_API_V2_URL: ${SERVICE_URL_CALCOM_3000}/api/v2
+        NEXT_PUBLIC_LICENSE_CONSENT: ${NEXT_PUBLIC_LICENSE_CONSENT:-agree}
+        NEXT_PUBLIC_WEBSITE_TERMS_URL: ${NEXT_PUBLIC_WEBSITE_TERMS_URL:-}
+        NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL: ${NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL:-}
+        NEXT_PUBLIC_SINGLE_ORG_SLUG: ${NEXT_PUBLIC_SINGLE_ORG_SLUG:-}
+        ORGANIZATIONS_ENABLED: ${ORGANIZATIONS_ENABLED:-}
+        CALCOM_TELEMETRY_DISABLED: ${CALCOM_TELEMETRY_DISABLED:-1}
+        NEXTAUTH_SECRET: ${SERVICE_BASE64_64_NEXTAUTH}
+        CALENDSO_ENCRYPTION_KEY: ${SERVICE_PASSWORD_32_ENCRYPTIONKEY}
+        DATABASE_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_DIRECT_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        CSP_POLICY: ${CSP_POLICY:-}
+    restart: always
+    environment:
+      # Declaring the magic variable makes Coolify generate the domain for this
+      # service and route it to port 3000.
+      - SERVICE_FQDN_CALCOM_3000
+      - NEXT_PUBLIC_WEBAPP_URL=${SERVICE_URL_CALCOM_3000}
+      - NEXT_PUBLIC_WEBSITE_URL=${SERVICE_URL_CALCOM_3000}
+      - NEXT_PUBLIC_EMBED_LIB_URL=${SERVICE_URL_CALCOM_3000}/embed/embed.js
+      - NEXT_PUBLIC_API_V2_URL=${SERVICE_URL_CALCOM_3000}/api/v2
+      - NEXTAUTH_URL=${SERVICE_URL_CALCOM_3000}
+      - ALLOWED_HOSTNAMES=${ALLOWED_HOSTNAMES:-}
+      - NEXTAUTH_SECRET=${SERVICE_BASE64_64_NEXTAUTH}
+      - CALENDSO_ENCRYPTION_KEY=${SERVICE_PASSWORD_32_ENCRYPTIONKEY}
+      - CRON_API_KEY=${SERVICE_PASSWORD_CRON}
+      - CALCOM_TELEMETRY_DISABLED=${CALCOM_TELEMETRY_DISABLED:-1}
+      - DATABASE_HOST=database:5432
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - REDIS_URL=redis://redis:6379
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-Cal.diy}
+      - EMAIL_SERVER_HOST=${EMAIL_SERVER_HOST:-}
+      - EMAIL_SERVER_PORT=${EMAIL_SERVER_PORT:-}
+      - EMAIL_SERVER_USER=${EMAIL_SERVER_USER:-}
+      - EMAIL_SERVER_PASSWORD=${EMAIL_SERVER_PASSWORD:-}
+      - ORGANIZATIONS_ENABLED=${ORGANIZATIONS_ENABLED:-}
+      - CSP_POLICY=${CSP_POLICY:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 300s
+
+  calcom-api:
+    build:
+      context: .
+      dockerfile: apps/api/v2/Dockerfile
+      args:
+        DATABASE_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_DIRECT_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+    restart: always
+    environment:
+      # API v2 is served on the same domain as the web app, under /api/v2.
+      - SERVICE_FQDN_CALCOM_80=/api/v2
+      - NODE_ENV=production
+      - API_PORT=80
+      - API_URL=${SERVICE_URL_CALCOM_3000}/api/v2
+      - WEB_APP_URL=${SERVICE_URL_CALCOM_3000}
+      - REWRITE_API_V2_PREFIX=${REWRITE_API_V2_PREFIX:-true}
+      - API_KEY_PREFIX=${API_KEY_PREFIX:-cal_}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_READ_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_WRITE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - NEXTAUTH_SECRET=${SERVICE_BASE64_64_NEXTAUTH}
+      - JWT_SECRET=${SERVICE_BASE64_64_JWT}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - IS_TEAM_BILLING_ENABLED=${IS_TEAM_BILLING_ENABLED:-false}
+      - IS_E2E=false
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
