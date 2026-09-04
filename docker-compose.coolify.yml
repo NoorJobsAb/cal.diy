@@ -54,7 +54,7 @@ services:
     environment:
       # Declaring this magic variable makes Coolify assign the domain to this
       # service and route it to port 3000.
-      - SERVICE_FQDN_CALCOM_3000
+      - SERVICE_FQDN_CALCOM_3000=${SERVICE_FQDN_CALCOM_3000}
       - NEXT_PUBLIC_WEBAPP_URL=${SERVICE_URL_CALCOM_3000}
       - NEXT_PUBLIC_WEBSITE_URL=${SERVICE_URL_CALCOM_3000}
       - NEXT_PUBLIC_EMBED_LIB_URL=${SERVICE_URL_CALCOM_3000}/embed/embed.js
