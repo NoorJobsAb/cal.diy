@@ -7,6 +7,7 @@
 #   - magic variables (https://next.coolify.io/docs/services/configuration/docker-compose):
 #       SERVICE_FQDN_<NAME>_<PORT>  registers the domain and points it to <PORT>
 #       SERVICE_URL_<NAME>_<PORT>   full URL (scheme + domain) of that FQDN
+#       SERVICE_LOWERCASEUSER_<NAME> generated lowercase username
 #       SERVICE_PASSWORD_<NAME>     generated password, persisted across deployments
 #       SERVICE_BASE64_<LEN>_<NAME> generated base64 secret of <LEN> characters
 
@@ -21,7 +22,7 @@ services:
     volumes:
       - database-data:/var/lib/postgresql
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-unicorn_user}
+      - POSTGRES_USER=${SERVICE_LOWERCASEUSER_POSTGRES}
       - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
       - POSTGRES_DB=${POSTGRES_DB:-calendso}
 
@@ -46,8 +47,8 @@ services:
         CALCOM_TELEMETRY_DISABLED: ${CALCOM_TELEMETRY_DISABLED}
         NEXTAUTH_SECRET: ${SERVICE_BASE64_64_NEXTAUTH}
         CALENDSO_ENCRYPTION_KEY: ${SERVICE_PASSWORD_32_ENCRYPTIONKEY}
-        DATABASE_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-        DATABASE_DIRECT_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_DIRECT_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
         CSP_POLICY: ${CSP_POLICY}
     restart: always
     environment:
@@ -64,8 +65,8 @@ services:
       - CRON_API_KEY=${SERVICE_PASSWORD_CRON}
       - CALCOM_TELEMETRY_DISABLED=${CALCOM_TELEMETRY_DISABLED}
       - DATABASE_HOST=database:5432
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-      - DATABASE_DIRECT_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
       - REDIS_URL=redis://redis:6379
       - CSP_POLICY=${CSP_POLICY}
     depends_on:
@@ -76,8 +77,8 @@ services:
       context: .
       dockerfile: apps/api/v2/Dockerfile
       args:
-        DATABASE_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-        DATABASE_DIRECT_URL: postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_DIRECT_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
     restart: always
     environment:
       # API v2 is served on the same domain as the web app, under /api/v2.
@@ -85,10 +86,10 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - API_PORT=80
       - API_URL=${SERVICE_URL_CALCOM_3000}/api/v2
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-      - DATABASE_READ_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-      - DATABASE_WRITE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-      - DATABASE_DIRECT_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_READ_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_WRITE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
       - NEXTAUTH_SECRET=${SERVICE_BASE64_64_NEXTAUTH}
       - JWT_SECRET=${SERVICE_BASE64_64_JWT}
       - REDIS_URL=redis://redis:6379
@@ -126,8 +127,8 @@ services:
       dockerfile: Dockerfile
     restart: always
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
-      - DATABASE_DIRECT_URL=postgresql://${POSTGRES_USER:-unicorn_user}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
     depends_on:
       - database
     command:
