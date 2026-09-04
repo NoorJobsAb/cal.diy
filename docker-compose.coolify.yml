@@ -1,0 +1,138 @@
+# Cal.diy on Coolify (https://coolify.io)
+#
+# Mirrors docker-compose.yml line by line, with Coolify-specific changes:
+#   - no `image:` for calcom/studio, they are built from this repository
+#   - no `ports:`, Coolify's proxy routes the domain to the containers
+#   - no `env_file:`, environment variables are managed in the Coolify UI
+#   - magic variables (https://next.coolify.io/docs/services/configuration/docker-compose):
+#       SERVICE_FQDN_<NAME>_<PORT>  registers the domain and points it to <PORT>
+#       SERVICE_URL_<NAME>_<PORT>   full URL (scheme + domain) of that FQDN
+#       SERVICE_LOWERCASEUSER_<NAME> generated lowercase username
+#       SERVICE_PASSWORD_<NAME>     generated password, persisted across deployments
+#       SERVICE_BASE64_<LEN>_<NAME> generated base64 secret of <LEN> characters
+
+volumes:
+  database-data:
+  redis-data:
+
+services:
+  database:
+    image: postgres
+    restart: always
+    volumes:
+      - database-data:/var/lib/postgresql
+    environment:
+      - POSTGRES_USER=${SERVICE_LOWERCASEUSER_POSTGRES}
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=${POSTGRES_DB:-calendso}
+
+  redis:
+    image: redis:latest
+    restart: always
+    volumes:
+      - redis-data:/data
+
+  calcom:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WEBAPP_URL: ${SERVICE_URL_CALCOM_3000}
+        NEXT_PUBLIC_API_V2_URL: ${SERVICE_URL_CALCOM_3000}/api/v2
+        NEXT_PUBLIC_LICENSE_CONSENT: ${NEXT_PUBLIC_LICENSE_CONSENT}
+        NEXT_PUBLIC_WEBSITE_TERMS_URL: ${NEXT_PUBLIC_WEBSITE_TERMS_URL}
+        NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL: ${NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL}
+        NEXT_PUBLIC_SINGLE_ORG_SLUG: ${NEXT_PUBLIC_SINGLE_ORG_SLUG}
+        ORGANIZATIONS_ENABLED: ${ORGANIZATIONS_ENABLED}
+        CALCOM_TELEMETRY_DISABLED: ${CALCOM_TELEMETRY_DISABLED}
+        NEXTAUTH_SECRET: ${SERVICE_BASE64_64_NEXTAUTH}
+        CALENDSO_ENCRYPTION_KEY: ${SERVICE_PASSWORD_32_ENCRYPTIONKEY}
+        DATABASE_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_DIRECT_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        CSP_POLICY: ${CSP_POLICY}
+    restart: always
+    environment:
+      # Declaring this magic variable makes Coolify assign the domain to this
+      # service and route it to port 3000.
+      - SERVICE_FQDN_CALCOM_3000
+      - NEXT_PUBLIC_WEBAPP_URL=${SERVICE_URL_CALCOM_3000}
+      - NEXT_PUBLIC_WEBSITE_URL=${SERVICE_URL_CALCOM_3000}
+      - NEXT_PUBLIC_EMBED_LIB_URL=${SERVICE_URL_CALCOM_3000}/embed/embed.js
+      - NEXT_PUBLIC_API_V2_URL=${SERVICE_URL_CALCOM_3000}/api/v2
+      - NEXTAUTH_URL=${SERVICE_URL_CALCOM_3000}
+      - NEXTAUTH_SECRET=${SERVICE_BASE64_64_NEXTAUTH}
+      - CALENDSO_ENCRYPTION_KEY=${SERVICE_PASSWORD_32_ENCRYPTIONKEY}
+      - CRON_API_KEY=${SERVICE_PASSWORD_CRON}
+      - CALCOM_TELEMETRY_DISABLED=${CALCOM_TELEMETRY_DISABLED}
+      - DATABASE_HOST=database:5432
+      - DATABASE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - REDIS_URL=redis://redis:6379
+      - CSP_POLICY=${CSP_POLICY}
+    depends_on:
+      - database
+
+  calcom-api:
+    build:
+      context: .
+      dockerfile: apps/api/v2/Dockerfile
+      args:
+        DATABASE_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+        DATABASE_DIRECT_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+    restart: always
+    environment:
+      # API v2 is served on the same domain as the web app, under /api/v2.
+      - SERVICE_FQDN_CALCOM_80=/api/v2
+      - NODE_ENV=${NODE_ENV:-production}
+      - API_PORT=80
+      - API_URL=${SERVICE_URL_CALCOM_3000}/api/v2
+      - DATABASE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_READ_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_WRITE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - NEXTAUTH_SECRET=${SERVICE_BASE64_64_NEXTAUTH}
+      - JWT_SECRET=${SERVICE_BASE64_64_JWT}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL}
+      - API_KEY_PREFIX=${API_KEY_PREFIX:-cal_}
+      - WEB_APP_URL=${SERVICE_URL_CALCOM_3000}
+      - IS_E2E=${IS_E2E:-false}
+      - REWRITE_API_V2_PREFIX=${REWRITE_API_V2_PREFIX:-true}
+      - CALCOM_LICENSE_KEY=${CALCOM_LICENSE_KEY}
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - STRIPE_API_KEY=${STRIPE_API_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_ID_STARTER=${STRIPE_PRICE_ID_STARTER}
+      - STRIPE_PRICE_ID_STARTER_OVERAGE=${STRIPE_PRICE_ID_STARTER_OVERAGE}
+      - STRIPE_PRICE_ID_ESSENTIALS=${STRIPE_PRICE_ID_ESSENTIALS}
+      - STRIPE_PRICE_ID_ESSENTIALS_OVERAGE=${STRIPE_PRICE_ID_ESSENTIALS_OVERAGE}
+      - STRIPE_PRICE_ID_ENTERPRISE=${STRIPE_PRICE_ID_ENTERPRISE}
+      - STRIPE_PRICE_ID_ENTERPRISE_OVERAGE=${STRIPE_PRICE_ID_ENTERPRISE_OVERAGE}
+      - STRIPE_TEAM_MONTHLY_PRICE_ID=${STRIPE_TEAM_MONTHLY_PRICE_ID}
+      - IS_TEAM_BILLING_ENABLED=${IS_TEAM_BILLING_ENABLED:-false}
+      - AXIOM_DATASET=${AXIOM_DATASET}
+      - AXIOM_TOKEN=${AXIOM_TOKEN}
+      - LOGGER_BRIDGE_LOG_LEVEL=${LOGGER_BRIDGE_LOG_LEVEL}
+      - DOCS_URL=${DOCS_URL}
+      - GET_LICENSE_KEY_URL=${GET_LICENSE_KEY_URL}
+    depends_on:
+      - database
+      - redis
+
+  # Optional use of Prisma Studio. In production, comment out or remove the section below to prevent unwanted access to your database.
+  studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+      - DATABASE_DIRECT_URL=postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@database:5432/${POSTGRES_DB:-calendso}
+    depends_on:
+      - database
+    command:
+      - npx
+      - prisma
+      - studio
+# END SECTION: Optional use of Prisma Studio.
